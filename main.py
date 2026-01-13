@@ -5,6 +5,7 @@ from random import randint
 from playwright.async_api import async_playwright, Locator, Browser, Page
 
 import bot
+import config
 import database
 import time_utils
 from config import URL_LIST, UrlConfig
@@ -37,10 +38,9 @@ async def open_page(url: str) -> Page:
 
 
 class Lot:
-    def __init__(self, locator: Locator, url: str, title: str, cost: str, id: int, is_wyroznione: bool, location: str,
-                 date: str):
+    def __init__(self, preview: str, url: str, title: str, cost: str, id: int, is_wyroznione: bool, location: str, date: str):
         self._desc = None
-        self.locator = locator
+        self._preview = preview
         self.url = url
         self.title = title
         self.cost = cost
@@ -59,12 +59,14 @@ class Lot:
         data = (await locator.locator('p[data-testid=location-date]').text_content()).split(' - ')
         location = data[0]
         date = data[1]
-        return Lot(locator, url, title, cost, id, is_wyroznione, location, date)
+        preview = await locator.locator('img').first.get_attribute('src')
+        return Lot(preview, url, title, cost, id, is_wyroznione, location, date)
 
     async def description(self):
+        if self._desc:
+            return self._desc
         try:
             page = await open_page(self.url)
-            if self._desc: return self._desc
             self._desc = await page.locator('div[data-cy="ad_description"]>div').inner_html(timeout=5000)
             await page.close()
         except:
@@ -73,7 +75,7 @@ class Lot:
         return self._desc
 
     async def preview(self):
-        return self.locator.locator('img').first.get_attribute('src')
+        return self._preview
 
     def __str__(self):
         return f'[{self.id} {self.title}: {self.cost} || loc: {self.location}; date: {self.date} || wyr: {self.is_wyroznione} | {self.url}]'
@@ -82,15 +84,24 @@ class Lot:
 async def check(url: str) -> list[Lot]:
     print(f"CHECKING [{url}]")
     page = await open_page(url)
-    items = page.locator('div[data-cy=l-card]')
-    lots = []
-    print(f"{await items.count()} items found")
-    for i in await items.all():
-        lot = await Lot.create(i)
-        lots.append(lot)
-        print(lot)
-    await page.close()
-    return lots
+    try:
+        items = page.locator('div[data-cy=l-card]')
+        lots = []
+        print(f"{await items.count()} items found")
+        for i in await items.all():
+            try:
+                lot = await Lot.create(i)
+                lots.append(lot)
+                print(lot)
+            except Exception:
+                traceback.print_exc()
+                print("Unable to parse lot")
+        return lots
+    finally:
+        try:
+            await page.close()
+        except Exception:
+            pass
 
 
 async def notify(lot: Lot, category: str = 'default') -> None:
@@ -128,10 +139,9 @@ async def main():
     await bot.start()
     async with async_playwright() as pw:
         global BROWSER
-        BROWSER = await pw.firefox.launch()
+        BROWSER = await pw.chromium.launch()
         while True:
             for k, v in URL_LIST.items():
-                lots = []
                 try:
                     lots = await check(v.url)
                 except:
@@ -150,4 +160,14 @@ async def main():
 
 
 if __name__ == '__main__':
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        pass
+    except Exception as e:
+        traceback.print_exc()
+        s = traceback.format_exc()
+        if len(s) % 1980 > 0:
+            asyncio.run(bot.send_text_as_file(config.ADMIN, s, 'Bot error'))
+        else:
+            asyncio.run(bot.send_message(config.ADMIN, f'<blockquote expandable>{s}</blockquote>'))
