@@ -139,7 +139,7 @@ async def main():
     await bot.start()
     async with async_playwright() as pw:
         global BROWSER
-        BROWSER = await pw.chromium.launch()
+        BROWSER = await pw.firefox.launch()
         while True:
             for k, v in URL_LIST.items():
                 try:
@@ -167,7 +167,8 @@ if __name__ == '__main__':
     except Exception as e:
         traceback.print_exc()
         s = traceback.format_exc()
+        loop = asyncio.new_event_loop()
         if len(s) % 1980 > 0:
-            asyncio.run(bot.send_text_as_file(config.ADMIN, s, 'Bot error'))
+            loop.run_until_complete(bot.send_text_as_file(config.ADMIN, s, 'Bot error'))
         else:
-            asyncio.run(bot.send_message(config.ADMIN, f'<blockquote expandable>{s}</blockquote>'))
+            loop.run_until_complete(bot.send_message(config.ADMIN, f'<blockquote expandable>{s}</blockquote>'))
